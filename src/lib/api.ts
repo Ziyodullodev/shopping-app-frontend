@@ -1,7 +1,8 @@
 import { initData } from './telegram'
 import type { Brand, Cart, Order, OrderInput, Paginated, Product, User } from './types'
 
-const BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '/api'
+// An empty VITE_API_URL must still fall back to /api, so use || rather than ??.
+const BASE = ((import.meta.env.VITE_API_URL as string | undefined) || '/api').replace(/\/$/, '')
 
 export class ApiError extends Error {
   status: number
@@ -34,7 +35,15 @@ async function raw<T>(path: string, init: RequestInit = {}, auth = true): Promis
   if (auth && access) headers.set('Authorization', `Bearer ${access}`)
   const res = await fetch(`${BASE}${path}`, { ...init, headers })
   const text = await res.text()
-  const data = text ? JSON.parse(text) : null
+  let data: unknown = null
+  if (text) {
+    try {
+      data = JSON.parse(text)
+    } catch {
+      // HTML error pages (proxy, 404, 500) are not JSON; report the status instead of a parse error.
+      throw new ApiError(res.status, `Server error (${res.status}). Please try again.`)
+    }
+  }
   if (!res.ok) throw new ApiError(res.status, errorMessage(data, `Request failed (${res.status})`), data)
   return data as T
 }
